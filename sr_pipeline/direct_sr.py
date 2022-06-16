@@ -48,23 +48,23 @@ class DirectSuperResolution:
         args.kernel_size2 = 5
         args.new_sequence_length = 4624
         args.layout = [96,496,4096]
-        
+
         model = DsrModel(args, transformer=shared_transformer)
         if args.fp16:
             model = model.half()
-        
+
         load_checkpoint(model, args) # on cpu
         model.eval()
         self.model = model.cuda()
 
         # save cpu weights
-        self.saved_weights = dict((k,v.cpu()) 
-            for k, v in model.named_parameters()
-            if 'transformer' in k
-        )
-        
+        self.saved_weights = {
+            k: v.cpu() for k, v in model.named_parameters() if 'transformer' in k
+        }
+
+
         invalid_slices = [slice(tokenizer.num_image_tokens, None)]
-    
+
         self.strategy = IterativeEntfilterStrategy(invalid_slices,
             temperature=args.temp_all_dsr, topk=args.topk_dsr, temperature2=args.temp_cluster_dsr) # temperature not used
         self.max_bz = max_bz

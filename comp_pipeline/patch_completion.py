@@ -41,14 +41,8 @@ class PatchCompletion:
             return (0, 0, 480, 480), orig_mask, inner_box
         # upper left corner
         h0, w0 = int(hc - lenm/2), int(wc - lenm/2)
-        if h0 < 0:
-            h0 = 0
-        if int(hc + lenm/2) >= 480:
-            h0 = 480 - lenm
-        if w0 < 0:
-            w0 = 0
-        if int(wc + lenm/2) >= 480:
-            w0 = 480 - lenm
+        h0 = 480 - lenm if int(hc + lenm/2) >= 480 else max(h0, 0)
+        w0 = 480 - lenm if int(wc + lenm/2) >= 480 else max(w0, 0)
         return (h0, w0, h0+lenm, w0+lenm), orig_mask[h0:h0+lenm, w0:w0+lenm], inner_box
 
     def __call__(self, image, orig_mask, text, batch_size=1):
@@ -97,7 +91,7 @@ class PatchCompletion:
         # find the position of inner box in the crop
         h0i, w0i, h1i, w1i = inner_box
         h0i -= h0; h1i -= h0; w0i -= w0; w1i -= w0
-        
+
         # replace the inner box
         ret = image.clone()[None, ...].expand(batch_size, -1, -1, -1).contiguous()
         for i in range(batch_size):

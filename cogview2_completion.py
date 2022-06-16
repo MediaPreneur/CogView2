@@ -119,14 +119,16 @@ def get_recipe(name):
         'topk_itersr': 16,
         'query_template': '{}<start_of_image>'
     }
-    if name == 'none':
-        pass
-    elif name == 'mainbody':
-        r['query_template'] = '{} 高清摄影 隔绝<start_of_image>'
-        
-    elif name == 'photo':
-        r['query_template'] = '{} 高清摄影<start_of_image>'
-        
+    if name == 'chinese':
+        r['query_template'] = '{} 水墨国画<start_of_image>'
+        r['temp_all_gen'] = 1.12
+    elif name == 'comics':
+        r['query_template'] = '{} 漫画 隔绝<start_of_image>'
+        r['topk_dsr'] = 5
+        r['temp_cluster_dsr'] = 0.4
+        r['temp_all_gen'] = 1.1
+        r['temp_all_itersr'] = 1
+        r['topk_itersr'] = 5
     elif name == 'flat':
         r['query_template'] = '{} 平面风格<start_of_image>'
         r['temp_all_gen'] = 1.1
@@ -135,25 +137,20 @@ def get_recipe(name):
 
         r['temp_all_itersr'] = 1
         r['topk_itersr'] = 5
-    elif name == 'comics':
-        r['query_template'] = '{} 漫画 隔绝<start_of_image>'
-        r['topk_dsr'] = 5
-        r['temp_cluster_dsr'] = 0.4
-        r['temp_all_gen'] = 1.1
-        r['temp_all_itersr'] = 1
-        r['topk_itersr'] = 5
-    elif name == 'oil':
-        r['query_template'] = '{} 油画风格<start_of_image>'
-        pass
-    elif name == 'sketch':
-        r['query_template'] = '{} 素描风格<start_of_image>'
-        r['temp_all_gen'] = 1.1
     elif name == 'isometric':
         r['query_template'] = '{} 等距矢量图<start_of_image>'
         r['temp_all_gen'] = 1.1
-    elif name == 'chinese':
-        r['query_template'] = '{} 水墨国画<start_of_image>'
-        r['temp_all_gen'] = 1.12
+    elif name == 'mainbody':
+        r['query_template'] = '{} 高清摄影 隔绝<start_of_image>'
+
+    elif name == 'oil':
+        r['query_template'] = '{} 油画风格<start_of_image>'
+    elif name == 'photo':
+        r['query_template'] = '{} 高清摄影<start_of_image>'
+
+    elif name == 'sketch':
+        r['query_template'] = '{} 素描风格<start_of_image>'
+        r['temp_all_gen'] = 1.1
     elif name == 'watercolor':
         r['query_template'] = '{} 水彩画风格<start_of_image>'
     return r
