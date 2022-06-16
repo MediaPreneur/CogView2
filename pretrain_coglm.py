@@ -30,36 +30,34 @@ def get_batch(data_iterator, args, timers):
 
     # Broadcast data.
     timers('data loader').start()
-    if data_iterator is not None:
-        data = next(data_iterator)
-    else:
-        data = None
+    data = next(data_iterator) if data_iterator is not None else None
     timers('data loader').stop()
 
     data_b = mpu.broadcast_data(keys, data, datatype)
     # Unpack.
     tokens_ = data_b['text'].long()
-    
+
     tokens, position_ids, labels, loss_masks, attention_mask = [], [], [], [], []
     # dispatch text-image, text samples
     for sample in tokens_:
         pad_masks = (sample == tokenizer['<pad>'])
         if pad_masks.any(): # text-image
-            if random.random() < args.image_caption_ratio:
-                token, pos, label, attn_mask, loss_mask = make_image_text_understanding(sample)
-            else:
-                token, pos, label, attn_mask, loss_mask = make_text_image_generation(sample)
+            token, pos, label, attn_mask, loss_mask = (
+                make_image_text_understanding(sample)
+                if random.random() < args.image_caption_ratio
+                else make_text_image_generation(sample)
+            )
+
+        elif sample[0] >= tokenizer.num_image_tokens:
+            token, pos, label, attn_mask, loss_mask = make_text_understanding(sample)
         else:
-            if sample[0] >= tokenizer.num_image_tokens:
-                token, pos, label, attn_mask, loss_mask = make_text_understanding(sample)
-            else:
-                raise ValueError('temporally not support pure image samples')
+            raise ValueError('temporally not support pure image samples')
         tokens.append(token)
         position_ids.append(pos)
         labels.append(label)
         attention_mask.append(attn_mask)
         loss_masks.append(loss_mask)
-        
+
     tokens = torch.stack(tokens)
     position_ids = torch.stack(position_ids)
     labels = torch.stack(labels)
@@ -67,7 +65,7 @@ def get_batch(data_iterator, args, timers):
     if args.fp16:
         attention_mask = attention_mask.half()
     loss_masks = torch.stack(loss_masks)
-    
+
     return tokens, position_ids, labels, attention_mask, loss_masks
 
 def make_text_understanding(x, poisson_rate=3, mask_ratio=0.15):
@@ -90,7 +88,7 @@ def make_text_understanding(x, poisson_rate=3, mask_ratio=0.15):
     lensum -= span_lens[i]
     span_lens = span_lens[:i]
     prev = sorted(random.sample(range(len(x) - lensum), len(span_lens)))
-    
+
     cum_lens, end_of_last_span = 0, 0
     full_attn_slices = []
     for i in range(len(prev)):
@@ -116,35 +114,37 @@ def make_text_image_generation(x):
         # select one language at random
         selected_text_slice, unselected_text_slice = slice(0, pad_indices[0]), slice(pad_indices[0] + 1, pad_indices[1])
         if random.random() < 0.5:
-            tmp = selected_text_slice
-            selected_text_slice = unselected_text_slice
-            unselected_text_slice = tmp
+            selected_text_slice, unselected_text_slice = (
+                unselected_text_slice,
+                selected_text_slice,
+            )
+
     else:
         print('warning: non-text image.')
     assert len(x) <= 512
-    
+
     token = x.clone()
     token[-401] = tokenizer['<start_of_image>']
-    
+
     pos = torch.zeros_like(x)
     pos[selected_text_slice] = torch.arange(len(pos[selected_text_slice]), device=x.device)
     pos[-401:] = torch.arange(512, 512 + 401, device=x.device)
-    
+
     label = x.clone()
     label[:-1] = x[1:]
-    
+
     loss_mask = torch.zeros_like(x)
     loss_mask[-401:-1] = 1
-    
+
     attn_mask = torch.zeros(len(x), len(x), device=x.device) # TODO FP16
     attn_mask[:, selected_text_slice] = 1
     attn_mask[-401:, -401:] = 1
     attn_mask[-401:, -401:].tril_()
-    
+
     # whether text unidirectional
     # attn_mask[selected_text_slice, selected_text_slice].tril_()
     # loss_mask[selected_text_slice.start: selected_text_slice.stop - 1] = 1
-    
+
     return token, pos, label, attn_mask, loss_mask 
 
 def make_image_text_understanding(x, patch_size=4, pseudo_mask_ratio=0.8):
@@ -158,19 +158,19 @@ def make_image_text_understanding(x, patch_size=4, pseudo_mask_ratio=0.8):
         # both zh and en
         text_lr.extend([(0+1, pad_indices[0]+1), (pad_indices[0] + 1+1, pad_indices[1]+1)])
     token[1:-400] = x[:-401] # move right to set aside start tokens
-    
+
     for l, r in text_lr:
         is_en = (token[l:r] < 83823).all()
         token[l-1] = tokenizer['<start_of_english>'] if is_en else tokenizer['<start_of_chinese>']
-    
+
     pos = torch.zeros_like(x)
     for l, r in text_lr:
         pos[l-1:r] = torch.arange(r-l+1, device=x.device)
     pos[-400:] = torch.arange(512 +1, 512 + 401, device=x.device)
-    
+
     label = token.clone()
     label[:-1] = token[1:]
-    
+
     loss_mask = torch.zeros_like(x)
     attn_mask = torch.zeros(len(x), len(x), device=x.device) # TODO FP16
     for l, r in text_lr:
@@ -178,14 +178,14 @@ def make_image_text_understanding(x, patch_size=4, pseudo_mask_ratio=0.8):
         attn_mask[l-1:r, l-1:r] = 1
         attn_mask[l-1:r, l-1:r].tril_()
         attn_mask[l-1:r, -400:] = 1
-    
+
     # sample patch_size * patch_size patches
     n = int(pseudo_mask_ratio * 400 / patch_size ** 2)
     lu_corners = random.sample(range((20 - patch_size)**2), k=n)
 
     region_mask = torch.zeros_like(x, dtype=torch.bool)
     region_mask[-400:] = True
-    
+
     for c in lu_corners:
         x, y = c // (20-patch_size), c % (20-patch_size)
         loss_mask[-400:].view(20, 20)[x: x + patch_size, y: y + patch_size - 1] = 1.
@@ -194,7 +194,7 @@ def make_image_text_understanding(x, patch_size=4, pseudo_mask_ratio=0.8):
     attn_mask[-400:, -400:].tril_()
     attn_mask.masked_fill_(region_mask.unsqueeze(1), 0)
     attn_mask.masked_fill_(region_mask.unsqueeze(0), 1)
-    
+
     return token, pos, label, attn_mask, loss_mask 
 
 def forward_step(data_iterator, model, args, timers):

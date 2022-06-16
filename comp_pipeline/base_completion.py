@@ -41,7 +41,6 @@ class BaseCompletion:
         self.log_attention_weight = log_attention_weight
         self.max_inference_batch_size = max_inference_batch_size
         self.strategy = strategy
-        pass
 
     def __call__(self, img_tokens, mask, txt_tokens, batch_size):
         assert img_tokens.shape == (1, 400)
@@ -88,16 +87,18 @@ class BaseCompletion:
         mbz = self.max_inference_batch_size
         assert batch_size < mbz or batch_size % mbz == 0
         get_func = partial(get_masks_and_position_ids_comp, pos_ids=pos_ids, txt_len=txt_len, context_length=context_length)
-        output_list = []
-        for tim in range(max(batch_size // mbz, 1)):
-            output_list.append(
-                filling_sequence(self.model, seq.clone(),
-                    batch_size=min(batch_size, mbz),
-                    strategy=self.strategy,
-                    log_attention_weights=log_attention_weights,
-                    get_masks_and_position_ids=get_func
-                    )[0]
-                )
+        output_list = [
+            filling_sequence(
+                self.model,
+                seq.clone(),
+                batch_size=min(batch_size, mbz),
+                strategy=self.strategy,
+                log_attention_weights=log_attention_weights,
+                get_masks_and_position_ids=get_func,
+            )[0]
+            for _ in range(max(batch_size // mbz, 1))
+        ]
+
         output_tokens = torch.cat(output_list, dim=0)
         # decoding
         small_imgs = []
@@ -108,6 +109,6 @@ class BaseCompletion:
                 im[pos_ids[j]-513] = seq[j]
             # ---
             small_imgs.append(im)
-            
+
         small_imgs = torch.stack(small_imgs)
         return small_imgs

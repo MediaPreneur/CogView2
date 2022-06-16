@@ -65,7 +65,7 @@ def main(args):
         seq = tokenizer.encode(text)
         if len(seq) > 110:
             raise ValueError('text too long.')
-        
+
         txt_len = len(seq) - 1
         seq = torch.tensor(seq + [-1]*400, device=args.device)
         # calibrate text length
@@ -78,7 +78,7 @@ def main(args):
         get_func = partial(get_masks_and_position_ids_coglm, context_length=txt_len)
         output_list, score_list = [], []
 
-        for tim in range(max(args.batch_size // mbz, 1)):
+        for _ in range(max(args.batch_size // mbz, 1)):
             strategy.start_pos = txt_len + 1
             coarse_samples = filling_sequence(model, seq.clone(),
                     batch_size=min(args.batch_size, mbz),
@@ -86,7 +86,7 @@ def main(args):
                     log_attention_weights=log_attention_weights,
                     get_masks_and_position_ids=get_func
                     )[0]
-            
+
             # get ppl for inverse prompting
             if args.inverse_prompt:
                 image_text_seq = torch.cat(
@@ -110,18 +110,18 @@ def main(args):
                 )
                 score_list.extend(scores.tolist())
                 # ---------------------
-            
+
             output_list.append(
                     coarse_samples
                 )
         output_tokens = torch.cat(output_list, dim=0)
-        
+
         if args.inverse_prompt:
             order_list = np.argsort(score_list)[::-1]
             print(sorted(score_list))
         else:
             order_list = range(output_tokens.shape[0])
-            
+
         imgs, txts = [], []
         if args.only_first_stage:
             for i in order_list:
@@ -178,14 +178,16 @@ def get_recipe(name):
         'topk_itersr': 16,
         'query_template': '{}<start_of_image>'
     }
-    if name == 'none':
-        pass
-    elif name == 'mainbody':
-        r['query_template'] = '{} 高清摄影 隔绝<start_of_image>'
-        
-    elif name == 'photo':
-        r['query_template'] = '{} 高清摄影<start_of_image>'
-        
+    if name == 'chinese':
+        r['query_template'] = '{} 水墨国画<start_of_image>'
+        r['temp_all_gen'] = 1.12
+    elif name == 'comics':
+        r['query_template'] = '{} 漫画 隔绝<start_of_image>'
+        r['topk_dsr'] = 5
+        r['temp_cluster_dsr'] = 0.4
+        r['temp_all_gen'] = 1.1
+        r['temp_all_itersr'] = 1
+        r['topk_itersr'] = 5
     elif name == 'flat':
         r['query_template'] = '{} 平面风格<start_of_image>'
         # r['attn_plus'] = 1.8
@@ -196,25 +198,20 @@ def get_recipe(name):
 
         r['temp_all_itersr'] = 1
         r['topk_itersr'] = 5
-    elif name == 'comics':
-        r['query_template'] = '{} 漫画 隔绝<start_of_image>'
-        r['topk_dsr'] = 5
-        r['temp_cluster_dsr'] = 0.4
-        r['temp_all_gen'] = 1.1
-        r['temp_all_itersr'] = 1
-        r['topk_itersr'] = 5
-    elif name == 'oil':
-        r['query_template'] = '{} 油画风格<start_of_image>'
-        pass
-    elif name == 'sketch':
-        r['query_template'] = '{} 素描风格<start_of_image>'
-        r['temp_all_gen'] = 1.1
     elif name == 'isometric':
         r['query_template'] = '{} 等距矢量图<start_of_image>'
         r['temp_all_gen'] = 1.1
-    elif name == 'chinese':
-        r['query_template'] = '{} 水墨国画<start_of_image>'
-        r['temp_all_gen'] = 1.12
+    elif name == 'mainbody':
+        r['query_template'] = '{} 高清摄影 隔绝<start_of_image>'
+
+    elif name == 'oil':
+        r['query_template'] = '{} 油画风格<start_of_image>'
+    elif name == 'photo':
+        r['query_template'] = '{} 高清摄影<start_of_image>'
+
+    elif name == 'sketch':
+        r['query_template'] = '{} 素描风格<start_of_image>'
+        r['temp_all_gen'] = 1.1
     elif name == 'watercolor':
         r['query_template'] = '{} 水彩画风格<start_of_image>'
     return r
